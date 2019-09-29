@@ -5,10 +5,12 @@ or with each class in its own row.
 """
 from os import getcwd, mkdir
 from pathlib import Path
+import re
 
 import pandas as pd
+import numpy as np
 from fastai.vision import *
-import tqdm
+from tqdm import tqdm
 
 
 def _setup_paths(input_path, output_path):
@@ -58,7 +60,10 @@ def masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str, output_pat
     """
     input_path, output_path = _setup_paths(input_path, output_path)
     for row in tqdm(df.iterrows()):
-        shape = _image_shape()
+        shape = _image_shape(Path(input_path, row[filename_col]))
+        decoded = rle_decode(row[mask_col], shape[1:])
+        file_output_path = output_path.joinpath(row[filename_col]).with_suffix('.npz')
+        np.save(file_output_path, decoded)
 
 
 def multilabel_masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str, labels: list, output_path=None,
@@ -80,3 +85,42 @@ def multilabel_masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str,
     """
     input_path, output_path = _setup_paths(input_path, output_path)
     mask_value = {label: i+1 for i, label in enumerate(labels)}
+    for row in tqdm(df.iterrows()):
+        shape = _image_shape(Path(input_path, row[filename_col]))
+        mask = np.zeros(shape)
+        for label in labels:
+            if row[label] is np.nan:
+                continue
+            decoded = rle_decode(row[label], shape[1:]) * mask_value[label]
+            #TODO there should be a check to make sure each pixel is assigned to only 1 class, and
+            # if not set it to 0, since it is likely not that informative
+            mask += decoded
+        file_output_path = output_path.joinpath(row[filename_col]).with_suffix('.npz')
+        np.save(file_output_path, mask)
+
+
+def prepare_multilabel_df(df: pd.DataFrame, input_col: str, rle_col: str) -> pd.DataFrame:
+    """
+    This utility processes a dataframe that has a different row for each label and moves
+    the encodings into their own columns instead.
+
+    Parameters
+    ----------
+    df
+
+    Returns
+    -------
+
+    """
+    temp_df = deepcopy(df)
+    temp_df['class'] = temp_df[input_col].str.extract(r'(.+)_(.*)')[1]
+    temp_df['real_filename'] = df[input_col].str.extract('([^_]+)')
+    image_classes = set(temp_df['class'])
+    rows = []
+    for name, group in tqdm(temp_df.groupby('real_filename')):
+        row = {'filename': name}
+        for idx, group_row in group.iterrows():
+            row[group_row['class']] = group_row[rle_col]
+        rows.append(row)
+    new_df = pd.DataFrame.from_dict(rows)
+    return new_df, image_classes
