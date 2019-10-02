@@ -59,14 +59,14 @@ def masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str, output_pat
 
     """
     input_path, output_path = _setup_paths(input_path, output_path)
-    for row in tqdm(df.iterrows()):
+    for _, row in tqdm(df.iterrows()):
         shape = _image_shape(Path(input_path, row[filename_col]))
         decoded = rle_decode(row[mask_col], shape[1:])
         file_output_path = output_path.joinpath(row[filename_col]).with_suffix('.npz')
         np.save(file_output_path, decoded)
 
 
-def multilabel_masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str, labels: list, output_path=None,
+def multilabel_masks_from_df(df: pd.DataFrame, filename_col: str, labels: list, output_path=None,
                              input_path=None) -> None:
     """
 
@@ -74,7 +74,6 @@ def multilabel_masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str,
     ----------
     df
     filename_col
-    mask_col
     labels
     output_path
     input_path
@@ -85,14 +84,14 @@ def multilabel_masks_from_df(df: pd.DataFrame, filename_col: str, mask_col: str,
     """
     input_path, output_path = _setup_paths(input_path, output_path)
     mask_value = {label: i+1 for i, label in enumerate(labels)}
-    for row in tqdm(df.iterrows()):
+    for _, row in tqdm(df.iterrows()):
         shape = _image_shape(Path(input_path, row[filename_col]))
-        mask = np.zeros(shape)
+        mask = np.zeros(shape[1:])
         for label in labels:
             if row[label] is np.nan:
                 continue
             decoded = rle_decode(row[label], shape[1:]) * mask_value[label]
-            #TODO there should be a check to make sure each pixel is assigned to only 1 class, and
+            # TODO there should be a check to make sure each pixel is assigned to only 1 class, and
             # if not set it to 0, since it is likely not that informative
             mask += decoded
         file_output_path = output_path.joinpath(row[filename_col]).with_suffix('.npz')
